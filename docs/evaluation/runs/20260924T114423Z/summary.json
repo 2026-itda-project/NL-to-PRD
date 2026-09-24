@@ -1,0 +1,23 @@
+{
+  "state": "completed",
+  "planned_slots": 36,
+  "attempted_slots": 36,
+  "unexecuted_slots": 0,
+  "attempts": 36,
+  "first_success_slots": 33,
+  "final_success_slots": 33,
+  "retry_attempts": 0,
+  "observed_tokens": {
+    "input_tokens": 78436,
+    "output_tokens": 60902
+  },
+  "usage_unknown_attempts": 3,
+  "total_consumed_tokens": null,
+  "attempt_errors": {
+    "other_contract_unknown": 3
+  },
+  "final_slot_errors": {
+    "other_contract_unknown": 3
+  },
+  "semantic_scoring": "pending_human_review"
+}

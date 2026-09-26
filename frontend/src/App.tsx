@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from 'react'
 
+const MAX_ROUNDS = 3
+
 type Requirement = {
+  project_id: string
   id: string
   category: string
   description: string
   status: 'confirmed' | 'needs_clarification' | 'proposed'
   source: string
   blocking: boolean
+  acceptance_criteria: string[]
 }
 
 type Gap = {
@@ -20,44 +24,203 @@ type Gap = {
 type Analysis = {
   project_id: string
   run_id: string
+  clarification_round: number
   requirements: Requirement[]
   gaps: Gap[]
   clarification_needed: boolean
   analysis_mode: 'mock' | 'snowchat'
+  usage: Record<string, unknown>[]
+}
+
+type ClarificationQuestion = {
+  gap_id: string
+  question: string
+  ai_proposal: string // 질문 단계에서는 표시하지 않는다
+}
+
+type Answer = { gap_id: string; answer: string }
+
+type ClarificationRound = {
+  round: number
+  gaps: Gap[]
+  questions: ClarificationQuestion[]
+  answers: Answer[]
+}
+
+type WorkflowState = Analysis & {
+  text: string
+  phase: 'clarifying' | 'review' | 'approved'
+  questions: ClarificationQuestion[]
+  history: ClarificationRound[]
+  edit_count: number
+}
+
+// backend RequirementCategory와 같은 값
+const CATEGORIES = ['role', 'functional', 'flow', 'permission', 'state', 'business_rule', 'exception', 'scope', 'integration', 'nfr']
+// source는 내용의 출처다. 수락해도 바뀌지 않으므로 Confirmed의 'AI 제안' = AI가 제안하고 사용자가 수락한 항목
+const SOURCE_LABELS: Record<string, string> = {
+  initial_input: '최초 입력', clarification_answer: '질문 답변', ai_proposal: 'AI 제안', review_input: 'Review 추가',
+}
+const GROUPS = [
+  ['Confirmed Requirements', 'confirmed'],
+  ['Needs Clarification', 'needs_clarification'],
+  ['AI Proposals', 'proposed'],
+] as const
+
+type ReviewAction =
+  | { type: 'accept'; ids: string[] }
+  | { type: 'edit'; id: string; description: string; category: string; acceptance_criteria: string[]; confirm: boolean }
+  | { type: 'add'; category: string; description: string; acceptance_criteria: string[] }
+  | { type: 'approve' }
+
+type ReviewedRequirements = {
+  project_id: string
+  run_id: string
+  requirements: Requirement[]
+  metrics: Record<string, number>
+}
+
+// 수정·추가 폼 하나만 연다. id가 ''이면 새 Requirement 추가
+type Draft = { id: string; category: string; description: string; ac: string; confirm: boolean }
+
+// detail 형식: {code, message} | 문자열(빈 입력) | 배열(FastAPI 요청 스키마 422)
+async function post<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const detail = (await response.json().catch(() => null))?.detail
+    const message = typeof detail?.message === 'string' ? detail.message : typeof detail === 'string' ? detail : null
+    throw new Error(message ?? `요청 실패 (${response.status})`)
+  }
+  return await response.json() as T
 }
 
 export default function App() {
   const [text, setText] = useState('')
-  const [result, setResult] = useState<Analysis | null>(null)
+  const [state, setState] = useState<WorkflowState | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState('')
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [reviewed, setReviewed] = useState<ReviewedRequirements | null>(null)
+
+  // 질문 대기 중이면 답변 라운드, 아니면 분석 직후 첫 호출(answers 없이)
+  async function step(current: WorkflowState) {
+    const waiting = current.questions.length > 0
+    setLoading(waiting ? '답변 반영 및 재분석 중… (약 30초)' : '확인 질문 생성 중… (약 30초)')
+    setError('')
+    try {
+      const body = waiting
+        ? { state: current, answers: current.questions.map(q => ({ gap_id: q.gap_id, answer: answers[q.gap_id] ?? '' })) }
+        : { state: current }
+      setState(await post<WorkflowState>('/api/clarification/step', body))
+      setAnswers({})
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Clarification 요청에 실패했습니다.')
+    } finally {
+      setLoading('')
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!text.trim()) {
       setError('요구사항을 입력해주세요.')
-      setResult(null)
       return
     }
-    setLoading(true)
+    setLoading('요구사항 분석 중… (최대 1분)')
     setError('')
-    setResult(null)
+    let analysis: Analysis
     try {
-      const response = await fetch('/api/requirements/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      })
-      if (!response.ok) {
-        const body = await response.json().catch(() => null)
-        throw new Error(body?.detail?.message ?? `분석 요청 실패 (${response.status})`)
-      }
-      setResult(await response.json() as Analysis)
+      analysis = await post<Analysis>('/api/requirements/analyze', { text })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '분석 요청에 실패했습니다.')
-    } finally {
-      setLoading(false)
+      setLoading('')
+      return
     }
+    const initial: WorkflowState = { ...analysis, text, phase: 'clarifying', questions: [], history: [], edit_count: 0 }
+    setState(initial)
+    await step(initial)
+  }
+
+  async function review(action: ReviewAction) {
+    if (!state) return
+    setLoading('처리 중…')
+    setError('')
+    try {
+      const result = await post<{ state: WorkflowState; reviewed: ReviewedRequirements | null }>('/api/review', { state, action })
+      setState(result.state)
+      setReviewed(result.reviewed)
+      setDraft(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Review 요청에 실패했습니다.')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  function saveDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!draft) return
+    const description = draft.description.trim()
+    if (!description) {
+      setError('내용을 입력해주세요.')
+      return
+    }
+    const fields = { category: draft.category, description, acceptance_criteria: draft.ac.split('\n').map(line => line.trim()).filter(Boolean) }
+    review(draft.id ? { type: 'edit', id: draft.id, ...fields, confirm: draft.confirm } : { type: 'add', ...fields })
+  }
+
+  function reset() {
+    setState(null)
+    setAnswers({})
+    setError('')
+    setDraft(null)
+    setReviewed(null)
+  }
+
+  const editable = state?.phase === 'review' && !loading
+  const pending = state?.requirements.filter(r => r.status === 'needs_clarification' && r.blocking) ?? []
+  const proposals = state?.requirements.filter(r => r.status === 'proposed') ?? []
+
+  const draftForm = draft && (
+    <form onSubmit={saveDraft}>
+      <label>category{' '}
+        <select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}>
+          {CATEGORIES.map(category => <option key={category}>{category}</option>)}
+        </select>
+      </label>
+      <label>내용 <textarea rows={2} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
+      <label>Acceptance Criteria (한 줄에 하나)
+        <textarea rows={3} value={draft.ac} onChange={event => setDraft({ ...draft, ac: event.target.value })} />
+      </label>
+      {draft.id && state?.requirements.find(r => r.id === draft.id)?.status !== 'confirmed' && (
+        <label><input type="checkbox" checked={draft.confirm} onChange={event => setDraft({ ...draft, confirm: event.target.checked })} /> 확정 (confirmed로 변경)</label>
+      )}
+      <button key="save" disabled={!!loading}>저장</button>
+      <button key="cancel" type="button" onClick={() => setDraft(null)} disabled={!!loading}>취소</button>
+    </form>
+  )
+
+  function reviewItem(r: Requirement) {
+    return (
+      <li key={r.id}>
+        <strong>{r.id}</strong> [{r.category}]{' '}
+        <span className={r.source === 'ai_proposal' ? 'badge ai' : 'badge'}>{SOURCE_LABELS[r.source] ?? r.source}</span>
+        {r.blocking && ' · 진행 보류'} — {r.description}
+        {r.acceptance_criteria.length > 0 && <small>AC: {r.acceptance_criteria.join(' / ')}</small>}
+        {draft?.id === r.id ? draftForm : editable && (
+          <span className="actions">
+            {r.status === 'proposed' && <button key="accept" type="button" onClick={() => review({ type: 'accept', ids: [r.id] })}>수락</button>}
+            <button key="edit" type="button" disabled={!!draft}
+              onClick={() => setDraft({ id: r.id, category: r.category, description: r.description, ac: r.acceptance_criteria.join('\n'), confirm: false })}>수정</button>
+          </span>
+        )}
+      </li>
+    )
   }
 
   return (
@@ -66,34 +229,106 @@ export default function App() {
       <p>서비스 요구사항을 입력하면 구조화된 항목과 확인이 필요한 부분을 표시합니다.</p>
       <form onSubmit={submit}>
         <label htmlFor="requirement-text">서비스 요구사항</label>
-        <textarea id="requirement-text" value={text} onChange={event => setText(event.target.value)} rows={5} />
-        <button disabled={loading}>{loading ? '분석 중…' : '분석하기'}</button>
+        <textarea id="requirement-text" value={text} onChange={event => setText(event.target.value)} rows={5} disabled={!!state} />
+        {state
+          ? <button key="reset" type="button" onClick={reset} disabled={!!loading}>처음부터 다시</button>
+          : <button key="analyze" disabled={!!loading}>분석하기</button>}
       </form>
+      {loading && <p className="notice" role="status">{loading}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {result && (
+      {state && (
         <section aria-live="polite">
-          <p className="notice">{result.analysis_mode === 'snowchat' ? 'SnowChat LLM 분석 결과' : 'Mock 분석 결과 · 규칙 기반 시연'}</p>
-          <p>{result.clarification_needed ? '핵심 확인 사항이 있습니다.' : '현재 발견된 핵심 확인 사항이 없습니다.'}</p>
-          <h2>추출된 요구사항</h2>
-          <ul>
-            {result.requirements.map(requirement => (
-              <li key={requirement.id}>
-                <strong>{requirement.id}</strong> [{requirement.category} · {requirement.status}]
-                {requirement.blocking && ' · 진행 보류'} — {requirement.description}
-              </li>
-            ))}
-          </ul>
-          <h2>확인이 필요한 부분</h2>
-          {result.gaps.length === 0 ? <p>발견된 Gap이 없습니다.</p> : (
-            <ul>
-              {result.gaps.map(gap => (
-                <li key={gap.id}>
-                  <strong>{gap.id}</strong> [{gap.category} · {gap.blocking ? '핵심' : '참고'}]
-                  {' '}{gap.description}
-                  <small>관련 요구사항: {gap.related_requirement_ids.join(', ') || '서비스 전반'}</small>
-                </li>
+          <p className="notice">{state.analysis_mode === 'snowchat' ? 'SnowChat LLM 분석 결과' : 'Mock 분석 결과 · 규칙 기반 시연'}</p>
+
+          {state.phase === 'clarifying' && state.questions.length > 0 && (
+            <form onSubmit={event => { event.preventDefault(); step(state) }}>
+              <h2>확인 질문 (라운드 {state.clarification_round}/{MAX_ROUNDS})</h2>
+              <p>답하기 어려운 질문은 비워 두면 건너뜁니다. {MAX_ROUNDS}라운드 뒤에도 남은 항목은 AI 제안으로 전환됩니다.</p>
+              {state.questions.map(q => (
+                <div key={q.gap_id}>
+                  <label htmlFor={`answer-${q.gap_id}`}><strong>{q.gap_id}</strong> {q.question}</label>
+                  <textarea id={`answer-${q.gap_id}`} rows={2} value={answers[q.gap_id] ?? ''} disabled={!!loading}
+                    onChange={event => setAnswers({ ...answers, [q.gap_id]: event.target.value })} />
+                </div>
               ))}
-            </ul>
+              <button disabled={!!loading}>답변 제출</button>
+            </form>
+          )}
+          {state.phase === 'clarifying' && state.questions.length === 0 && !loading && (
+            <button type="button" onClick={() => step(state)}>확인 질문 생성 다시 시도</button>
+          )}
+          {/* review 이후 gaps는 마지막 분석 결과라 blocking 값을 신뢰하지 않는다. phase와 requirements로만 판단 */}
+          {state.phase !== 'clarifying' && (
+            <>
+              <h2>Requirement Review</h2>
+              <p className="notice">
+                {state.phase === 'review'
+                  ? 'Clarification이 끝났습니다. 요구사항을 확인·수정하고 승인하세요.'
+                  : '승인했습니다. 아래 JSON이 PRD 생성 단계의 입력입니다.'}
+              </p>
+              {GROUPS.map(([title, status]) => {
+                const items = state.requirements.filter(r => r.status === status)
+                return (
+                  <div key={status}>
+                    <h3>{title} ({items.length})</h3>
+                    {status === 'proposed' && editable && items.length > 1 && (
+                      <button type="button" onClick={() => review({ type: 'accept', ids: items.map(r => r.id) })}>모두 수락</button>
+                    )}
+                    {items.length === 0 ? <p>없음</p> : <ul>{items.map(reviewItem)}</ul>}
+                  </div>
+                )
+              })}
+              {state.phase === 'review' && (
+                <>
+                  {draft?.id === ''
+                    ? <div key="add-form"><h3>요구사항 추가</h3>{draftForm}</div>
+                    : <button key="add" type="button" disabled={!editable || !!draft}
+                        onClick={() => setDraft({ id: '', category: 'functional', description: '', ac: '', confirm: false })}>요구사항 추가</button>}
+                  <h3>승인</h3>
+                  {pending.length > 0 && (
+                    <p className="error">진행 보류 항목({pending.map(r => r.id).join(', ')})을 수정 화면에서 확정해야 승인할 수 있습니다.</p>
+                  )}
+                  {draft && <p className="error">편집 중인 항목을 저장하거나 취소해야 승인할 수 있습니다.</p>}
+                  {proposals.length > 0 && (
+                    <p>수락하지 않은 AI 제안 {proposals.length}개는 proposed 상태로 인계되어 PRD의 Assumptions 후보가 됩니다.</p>
+                  )}
+                  <button key="approve" type="button" disabled={!editable || pending.length > 0 || !!draft}
+                    onClick={() => review({ type: 'approve' })}>요구사항 승인</button>
+                </>
+              )}
+              {reviewed && (
+                <>
+                  <h3>인계 JSON (ReviewedRequirements)</h3>
+                  <pre>{JSON.stringify(reviewed, null, 2)}</pre>
+                </>
+              )}
+            </>
+          )}
+
+          {state.phase === 'clarifying' && (
+            <>
+              <h2>현재 요구사항</h2>
+              <ul>
+                {state.requirements.map(requirement => (
+                  <li key={requirement.id}>
+                    <strong>{requirement.id}</strong> [{requirement.category} · {requirement.status} · {requirement.source}]
+                    {requirement.blocking && ' · 진행 보류'} — {requirement.description}
+                  </li>
+                ))}
+              </ul>
+              <h2>확인이 필요한 부분</h2>
+              {state.gaps.length === 0 ? <p>발견된 Gap이 없습니다.</p> : (
+                <ul>
+                  {state.gaps.map(gap => (
+                    <li key={gap.id}>
+                      <strong>{gap.id}</strong> [{gap.category} · {gap.blocking ? '핵심' : '참고'}]
+                      {' '}{gap.description}
+                      <small>관련 요구사항: {gap.related_requirement_ids.join(', ') || '서비스 전반'}</small>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </section>
       )}

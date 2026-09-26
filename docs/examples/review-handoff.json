@@ -1,0 +1,341 @@
+{
+  "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+  "run_id": "ab564d07-0abe-4388-9dbd-d23d2d13378b",
+  "requirements": [
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-001",
+      "category": "role",
+      "description": "직원",
+      "status": "confirmed",
+      "source": "initial_input",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-002",
+      "category": "role",
+      "description": "관리자",
+      "status": "confirmed",
+      "source": "initial_input",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-003",
+      "category": "functional",
+      "description": "직원들이 휴가를 신청할 수 있어야 한다.",
+      "status": "confirmed",
+      "source": "initial_input",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-004",
+      "category": "functional",
+      "description": "관리자가 휴가 신청을 승인할 수 있어야 한다.",
+      "status": "confirmed",
+      "source": "initial_input",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-005",
+      "category": "scope",
+      "description": "사내 휴가관리 서비스여야 한다.",
+      "status": "confirmed",
+      "source": "initial_input",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-006",
+      "category": "permission",
+      "description": "팀장은 자기 팀 직원의 휴가만 승인하며, 승인자는 팀장 한 명으로 1단계 승인한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "팀장은 자기 팀 직원의 휴가만 승인할 수 있다.",
+        "휴가 승인은 팀장 한 명의 1단계 승인으로 처리된다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-007",
+      "category": "functional",
+      "description": "직원은 휴가 신청 시 휴가 종류, 시작일, 종료일, 사유를 입력한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "휴가 신청에 휴가 종류, 시작일, 종료일, 사유 입력 항목이 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-008",
+      "category": "functional",
+      "description": "반차 신청 시 오전 또는 오후를 선택한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "반차 신청 시 오전 또는 오후를 선택할 수 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-009",
+      "category": "business_rule",
+      "description": "직원은 오늘 이후 날짜의 휴가만 신청할 수 있다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "오늘 날짜의 휴가는 신청할 수 없어야 한다.",
+        "오늘 이후 날짜의 휴가는 신청할 수 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-010",
+      "category": "business_rule",
+      "description": "연차는 매년 15일 부여한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "연차가 매년 15일 부여되어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-011",
+      "category": "business_rule",
+      "description": "휴가 일수 계산에서 주말과 공휴일은 제외한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "휴가 일수 계산 시 주말을 제외해야 한다.",
+        "휴가 일수 계산 시 공휴일을 제외해야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-012",
+      "category": "business_rule",
+      "description": "직원은 잔여 연차보다 많이 신청할 수 없다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "신청 연차가 잔여 연차를 초과하면 신청할 수 없어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-013",
+      "category": "state",
+      "description": "휴가 신청은 신청, 승인, 반려, 취소 상태로 관리한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "휴가 신청에 신청, 승인, 반려, 취소 상태가 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-014",
+      "category": "business_rule",
+      "description": "팀장은 휴가 신청을 반려할 때 사유를 반드시 입력한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "반려 처리 시 반려 사유를 입력하지 않으면 처리할 수 없어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-015",
+      "category": "state",
+      "description": "팀장이 휴가 신청을 승인하면 휴가가 바로 확정된다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "팀장 승인 즉시 휴가 신청이 확정되어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-016",
+      "category": "permission",
+      "description": "승인 전에는 직원이 자신의 휴가 신청을 자유롭게 수정하거나 취소할 수 있다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "승인 전 휴가 신청을 직원이 수정할 수 있어야 한다.",
+        "승인 전 휴가 신청을 직원이 취소할 수 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-017",
+      "category": "flow",
+      "description": "승인 후에는 직원이 휴가 시작일 전까지 취소 요청만 할 수 있으며, 팀장이 승인해야 취소된다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "승인 후 휴가 시작일 전까지 직원이 취소 요청을 할 수 있어야 한다.",
+        "승인 후 직원은 수정할 수 없어야 한다.",
+        "취소 요청은 팀장이 승인해야 취소되어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-018",
+      "category": "permission",
+      "description": "관리자는 신청된 휴가를 취소하지 않는다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "관리자에게 신청된 휴가를 취소하는 기능을 제공하지 않아야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-019",
+      "category": "functional",
+      "description": "관리자가 직원 계정을 등록하고 비활성화한다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "관리자가 직원 계정을 등록할 수 있어야 한다.",
+        "관리자가 직원 계정을 비활성화할 수 있어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-020",
+      "category": "scope",
+      "description": "직접 회원가입은 제공하지 않는다.",
+      "status": "confirmed",
+      "source": "clarification_answer",
+      "blocking": false,
+      "acceptance_criteria": [
+        "직원이 직접 회원가입할 수 없어야 한다."
+      ]
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-021",
+      "category": "role",
+      "description": "관리자와 팀장을 별도 역할로 운영하며, 관리자는 직원 계정과 조직 정보를 관리하고 팀장은 자기 팀 직원의 휴가를 승인·반려하며 취소 요청을 처리한다.",
+      "status": "confirmed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-022",
+      "category": "permission",
+      "description": "관리자가 직원과 팀장의 소속 팀을 지정하고 변경하며, 팀장은 소속 팀 정보를 변경할 수 없다.",
+      "status": "confirmed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-023",
+      "category": "flow",
+      "description": "관리자가 직원의 이메일로 임시 로그인 정보를 전달하고, 직원은 첫 로그인 때 비밀번호를 설정하며 이메일 인증으로 비밀번호를 재설정한다.",
+      "status": "proposed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-024",
+      "category": "business_rule",
+      "description": "휴가 종류는 연차와 반차로 제공하고, 연차는 1일, 반차는 0.5일을 연차 잔여일수에서 차감한다.",
+      "status": "proposed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-025",
+      "category": "business_rule",
+      "description": "대한민국의 법정 공휴일을 기준으로 시스템이 공휴일 달력을 제공하고, 관리자가 연도별 공휴일을 등록·수정할 수 있도록 한다.",
+      "status": "proposed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-026",
+      "category": "state",
+      "description": "취소 요청 상태를 별도로 두고, 팀장이 취소를 승인하면 취소 상태로 변경하며 거절하면 기존 승인 상태를 유지한다.",
+      "status": "confirmed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-027",
+      "category": "business_rule",
+      "description": "취소가 최종 승인되는 즉시 차감된 연차를 전부 복원하고, 취소 요청 중인 휴가는 취소가 확정되기 전까지 잔여 연차와 기간 겹침 검사에 포함한다.",
+      "status": "proposed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-028",
+      "category": "business_rule",
+      "description": "연차 15일은 매년 1월 1일에 부여하고, 입사자는 입사일 기준으로 남은 기간만큼 비례 부여하며 퇴사 시 미사용 연차를 정산하고, 전년도 잔여 연차는 이월하지 않고 소멸한다.",
+      "status": "proposed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": []
+    },
+    {
+      "project_id": "e70318ee-6fd0-42f5-818f-da9305d223fe",
+      "id": "REQ-029",
+      "category": "exception",
+      "description": "직원은 같은 기간에 여러 휴가를 신청할 수 없으며, 신청 중이거나 승인된 휴가와 기간이 겹치면 새 신청을 막는다.",
+      "status": "confirmed",
+      "source": "ai_proposal",
+      "blocking": false,
+      "acceptance_criteria": [
+        "승인하면 신청 상태가 승인으로 표시된다"
+      ]
+    }
+  ],
+  "metrics": {
+    "question_count": 24,
+    "turn_count": 3,
+    "edit_count": 1,
+    "unaccepted_proposal_count": 5
+  }
+}

@@ -9,5 +9,11 @@ li { margin: .7rem 0; }
 small { display: block; color: #465766; }
 .notice { padding: .7rem; background: #eaf4ff; }
 .error { color: #a30000; }
+select { font: inherit; padding: .3rem; }
+pre { overflow-x: auto; padding: .8rem; background: #f3f5f7; font-size: .85rem; }
+.badge { padding: .1rem .45rem; border-radius: 999px; background: #e7ebef; font-size: .8rem; }
+.badge.ai { background: #fff1c2; color: #7a4b00; }
+.actions { display: inline-flex; gap: .4rem; margin-left: .5rem; }
+.actions button { padding: .2rem .6rem; }
 @media (max-width: 800px) { main { margin: 0; padding: 1.2rem; border-radius: 0; } }
 

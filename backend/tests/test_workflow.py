@@ -74,11 +74,18 @@ class ApplyUpdateTest(unittest.TestCase):
         self.assertEqual([result[0], result[2]], [reqs[0], reqs[2]])
 
     def test_rejects_invalid_updates(self):
-        reqs = [req("REQ-001"), req("REQ-002", status="proposed", source="ai_proposal")]
+        reqs = [req("REQ-001"), req("REQ-002", status="proposed", source="ai_proposal"),
+                req("REQ-004", source="review_input")]
         for updates in ([updated("REQ-002")], [updated("REQ-003", project_id="other")],
-                        [updated("REQ-003"), updated("REQ-003")]):
+                        [updated("REQ-003"), updated("REQ-003")],
+                        [updated("REQ-001")], [updated("REQ-004")]):  # 최초 입력·Review 입력 출처 보존
             with self.subTest(updates=[u.id for u in updates]), self.assertRaises(ValueError):
                 apply_update(reqs, updates, PID)
+
+    def test_replaces_previous_clarification_answer(self):
+        reqs = [req("REQ-001"), req("REQ-002", source="clarification_answer")]
+        result = apply_update(reqs, [updated("REQ-002")], PID)
+        self.assertEqual(result[1].description, "REQ-002 답변")
 
 
 class ToProposalsTest(unittest.TestCase):

@@ -37,8 +37,11 @@ def apply_update(reqs: list[Requirement], updates: list[UpdatedRequirement], pro
     for u in updates:
         if u.project_id != project_id:
             raise ValueError("갱신 결과의 project_id가 일치하지 않습니다.")
-        if u.id in by_id and by_id[u.id].status == "proposed":
-            raise ValueError("AI Proposal은 답변 반영으로 교체할 수 없습니다.")
+        # 최초 입력·Review 입력·AI Proposal의 출처를 지키기 위해 미결정 항목과 이전 답변 항목만 교체한다.
+        old = by_id.get(u.id)
+        if old and not (old.status == "needs_clarification"
+                        or (old.status == "confirmed" and old.source == "clarification_answer")):
+            raise ValueError("답변 반영은 미결정 항목이나 이전 답변 항목만 교체할 수 있습니다.")
     for u in updates:
         by_id[u.id] = Requirement(**u.model_dump())
     return list(by_id.values())

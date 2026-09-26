@@ -55,6 +55,34 @@ type WorkflowState = Analysis & {
   edit_count: number
 }
 
+// backend RequirementCategory와 같은 값
+const CATEGORIES = ['role', 'functional', 'flow', 'permission', 'state', 'business_rule', 'exception', 'scope', 'integration', 'nfr']
+// source는 내용의 출처다. 수락해도 바뀌지 않으므로 Confirmed의 'AI 제안' = AI가 제안하고 사용자가 수락한 항목
+const SOURCE_LABELS: Record<string, string> = {
+  initial_input: '최초 입력', clarification_answer: '질문 답변', ai_proposal: 'AI 제안', review_input: 'Review 추가',
+}
+const GROUPS = [
+  ['Confirmed Requirements', 'confirmed'],
+  ['Needs Clarification', 'needs_clarification'],
+  ['AI Proposals', 'proposed'],
+] as const
+
+type ReviewAction =
+  | { type: 'accept'; ids: string[] }
+  | { type: 'edit'; id: string; description: string; category: string; acceptance_criteria: string[]; confirm: boolean }
+  | { type: 'add'; category: string; description: string; acceptance_criteria: string[] }
+  | { type: 'approve' }
+
+type ReviewedRequirements = {
+  project_id: string
+  run_id: string
+  requirements: Requirement[]
+  metrics: Record<string, number>
+}
+
+// 수정·추가 폼 하나만 연다. id가 ''이면 새 Requirement 추가
+type Draft = { id: string; category: string; description: string; ac: string; confirm: boolean }
+
 // detail 형식: {code, message} | 문자열(빈 입력) | 배열(FastAPI 요청 스키마 422)
 async function post<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -76,6 +104,8 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [loading, setLoading] = useState('')
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [reviewed, setReviewed] = useState<ReviewedRequirements | null>(null)
 
   // 질문 대기 중이면 답변 라운드, 아니면 분석 직후 첫 호출(answers 없이)
   async function step(current: WorkflowState) {
@@ -116,10 +146,81 @@ export default function App() {
     await step(initial)
   }
 
+  async function review(action: ReviewAction) {
+    if (!state) return
+    setLoading('처리 중…')
+    setError('')
+    try {
+      const result = await post<{ state: WorkflowState; reviewed: ReviewedRequirements | null }>('/api/review', { state, action })
+      setState(result.state)
+      setReviewed(result.reviewed)
+      setDraft(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Review 요청에 실패했습니다.')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  function saveDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!draft) return
+    const description = draft.description.trim()
+    if (!description) {
+      setError('내용을 입력해주세요.')
+      return
+    }
+    const fields = { category: draft.category, description, acceptance_criteria: draft.ac.split('\n').map(line => line.trim()).filter(Boolean) }
+    review(draft.id ? { type: 'edit', id: draft.id, ...fields, confirm: draft.confirm } : { type: 'add', ...fields })
+  }
+
   function reset() {
     setState(null)
     setAnswers({})
     setError('')
+    setDraft(null)
+    setReviewed(null)
+  }
+
+  const editable = state?.phase === 'review' && !loading
+  const pending = state?.requirements.filter(r => r.status === 'needs_clarification' && r.blocking) ?? []
+  const proposals = state?.requirements.filter(r => r.status === 'proposed') ?? []
+
+  const draftForm = draft && (
+    <form onSubmit={saveDraft}>
+      <label>category{' '}
+        <select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}>
+          {CATEGORIES.map(category => <option key={category}>{category}</option>)}
+        </select>
+      </label>
+      <label>내용 <textarea rows={2} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
+      <label>Acceptance Criteria (한 줄에 하나)
+        <textarea rows={3} value={draft.ac} onChange={event => setDraft({ ...draft, ac: event.target.value })} />
+      </label>
+      {draft.id && state?.requirements.find(r => r.id === draft.id)?.status !== 'confirmed' && (
+        <label><input type="checkbox" checked={draft.confirm} onChange={event => setDraft({ ...draft, confirm: event.target.checked })} /> 확정 (confirmed로 변경)</label>
+      )}
+      <button key="save" disabled={!!loading}>저장</button>
+      <button key="cancel" type="button" onClick={() => setDraft(null)} disabled={!!loading}>취소</button>
+    </form>
+  )
+
+  function reviewItem(r: Requirement) {
+    return (
+      <li key={r.id}>
+        <strong>{r.id}</strong> [{r.category}]{' '}
+        <span className={r.source === 'ai_proposal' ? 'badge ai' : 'badge'}>{SOURCE_LABELS[r.source] ?? r.source}</span>
+        {r.blocking && ' · 진행 보류'} — {r.description}
+        {r.acceptance_criteria.length > 0 && <small>AC: {r.acceptance_criteria.join(' / ')}</small>}
+        {draft?.id === r.id ? draftForm : editable && (
+          <span className="actions">
+            {r.status === 'proposed' && <button key="accept" type="button" onClick={() => review({ type: 'accept', ids: [r.id] })}>수락</button>}
+            <button key="edit" type="button" disabled={!!draft}
+              onClick={() => setDraft({ id: r.id, category: r.category, description: r.description, ac: r.acceptance_criteria.join('\n'), confirm: false })}>수정</button>
+          </span>
+        )}
+      </li>
+    )
   }
 
   return (
@@ -156,22 +257,65 @@ export default function App() {
           {state.phase === 'clarifying' && state.questions.length === 0 && !loading && (
             <button type="button" onClick={() => step(state)}>확인 질문 생성 다시 시도</button>
           )}
+          {/* review 이후 gaps는 마지막 분석 결과라 blocking 값을 신뢰하지 않는다. phase와 requirements로만 판단 */}
           {state.phase !== 'clarifying' && (
-            <p className="notice">Clarification이 끝났습니다. Requirement Review 단계로 이동합니다. (Review 화면은 다음 작업에서 구현)</p>
+            <>
+              <h2>Requirement Review</h2>
+              <p className="notice">
+                {state.phase === 'review'
+                  ? 'Clarification이 끝났습니다. 요구사항을 확인·수정하고 승인하세요.'
+                  : '승인했습니다. 아래 JSON이 PRD 생성 단계의 입력입니다.'}
+              </p>
+              {GROUPS.map(([title, status]) => {
+                const items = state.requirements.filter(r => r.status === status)
+                return (
+                  <div key={status}>
+                    <h3>{title} ({items.length})</h3>
+                    {status === 'proposed' && editable && items.length > 1 && (
+                      <button type="button" onClick={() => review({ type: 'accept', ids: items.map(r => r.id) })}>모두 수락</button>
+                    )}
+                    {items.length === 0 ? <p>없음</p> : <ul>{items.map(reviewItem)}</ul>}
+                  </div>
+                )
+              })}
+              {state.phase === 'review' && (
+                <>
+                  {draft?.id === ''
+                    ? <div key="add-form"><h3>요구사항 추가</h3>{draftForm}</div>
+                    : <button key="add" type="button" disabled={!editable || !!draft}
+                        onClick={() => setDraft({ id: '', category: 'functional', description: '', ac: '', confirm: false })}>요구사항 추가</button>}
+                  <h3>승인</h3>
+                  {pending.length > 0 && (
+                    <p className="error">진행 보류 항목({pending.map(r => r.id).join(', ')})을 수정 화면에서 확정해야 승인할 수 있습니다.</p>
+                  )}
+                  {draft && <p className="error">편집 중인 항목을 저장하거나 취소해야 승인할 수 있습니다.</p>}
+                  {proposals.length > 0 && (
+                    <p>수락하지 않은 AI 제안 {proposals.length}개는 proposed 상태로 인계되어 PRD의 Assumptions 후보가 됩니다.</p>
+                  )}
+                  <button key="approve" type="button" disabled={!editable || pending.length > 0 || !!draft}
+                    onClick={() => review({ type: 'approve' })}>요구사항 승인</button>
+                </>
+              )}
+              {reviewed && (
+                <>
+                  <h3>인계 JSON (ReviewedRequirements)</h3>
+                  <pre>{JSON.stringify(reviewed, null, 2)}</pre>
+                </>
+              )}
+            </>
           )}
 
-          <h2>현재 요구사항</h2>
-          <ul>
-            {state.requirements.map(requirement => (
-              <li key={requirement.id}>
-                <strong>{requirement.id}</strong> [{requirement.category} · {requirement.status} · {requirement.source}]
-                {requirement.blocking && ' · 진행 보류'} — {requirement.description}
-              </li>
-            ))}
-          </ul>
-          {/* review 이후 gaps는 마지막 분석 결과라 blocking 값을 신뢰하지 않는다 */}
           {state.phase === 'clarifying' && (
             <>
+              <h2>현재 요구사항</h2>
+              <ul>
+                {state.requirements.map(requirement => (
+                  <li key={requirement.id}>
+                    <strong>{requirement.id}</strong> [{requirement.category} · {requirement.status} · {requirement.source}]
+                    {requirement.blocking && ' · 진행 보류'} — {requirement.description}
+                  </li>
+                ))}
+              </ul>
               <h2>확인이 필요한 부분</h2>
               {state.gaps.length === 0 ? <p>발견된 Gap이 없습니다.</p> : (
                 <ul>

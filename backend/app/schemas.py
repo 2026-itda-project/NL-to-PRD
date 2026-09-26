@@ -156,3 +156,21 @@ class ReviewedRequirements(BaseModel):
     run_id: str
     requirements: list[Requirement]
     metrics: dict
+
+
+class ClarificationStepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    state: WorkflowState
+    answers: list[Answer] | None = None
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    state: WorkflowState
+    action: ReviewAction
+
+
+class ReviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    state: WorkflowState
+    reviewed: ReviewedRequirements | None = None

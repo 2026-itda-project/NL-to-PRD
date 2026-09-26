@@ -1,6 +1,6 @@
 """Clarification·Review 상태 전이 규칙. LLM을 호출하지 않는 순수 함수만 둔다."""
 from app.schemas import (
-    AddAction, ClarificationQuestion, EditAction, Gap, Requirement, RequirementCategory,
+    AddAction, Answer, ClarificationQuestion, EditAction, Gap, Requirement, RequirementCategory,
     ReviewedRequirements, UpdatedRequirement, WorkflowState,
 )
 
@@ -106,3 +106,23 @@ def approve(state: WorkflowState) -> tuple[WorkflowState, ReviewedRequirements]:
             "unaccepted_proposal_count": sum(r.status == "proposed" for r in state.requirements),
         })
     return state.model_copy(update={"phase": "approved"}), reviewed
+
+
+def validate_state(state: WorkflowState) -> None:
+    """클라이언트가 보낸 상태의 불변식. stateless 왕복이라 요청마다 다시 확인한다."""
+    ids = [r.id for r in state.requirements]
+    if len(ids) != len(set(ids)) or any(r.project_id != state.project_id for r in state.requirements):
+        raise ValueError("Requirement의 id가 중복되거나 project_id가 일치하지 않습니다.")
+    if not {q.gap_id for q in state.questions} <= {g.id for g in state.gaps}:
+        raise ValueError("질문이 현재 Gap 목록에 없는 Gap을 가리킵니다.")
+
+
+def fill_answers(questions: list[ClarificationQuestion], answers: list[Answer] | None) -> list[Answer]:
+    """답변을 질문 순서로 정렬하고, 빠진 질문은 빈 답변(건너뜀)으로 채운다."""
+    if answers is None:
+        raise ValueError("현재 질문에 대한 답변이 필요합니다.")
+    ids = [a.gap_id for a in answers]
+    if len(ids) != len(set(ids)) or not set(ids) <= {q.gap_id for q in questions}:
+        raise ValueError("답변의 gap_id가 중복되거나 현재 질문 목록에 없습니다.")
+    given = {a.gap_id: a.answer for a in answers}
+    return [Answer(gap_id=q.gap_id, answer=given.get(q.gap_id, "")) for q in questions]

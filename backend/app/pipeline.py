@@ -11,8 +11,12 @@ from pydantic import ValidationError
 from app.llm.errors import AnalysisError
 from app.llm.mock import MockProvider
 from app.llm.snowchat import SnowChatProvider
-from app.schemas import AnalyzeResponse, ExtractionOutput, GapOutput, QuestionOutput, RequirementUpdateOutput
-from app.workflow import apply_update
+from app.schemas import (
+    AnalyzeResponse, ClarificationRound, ExtractionOutput, GapOutput, QuestionOutput, RequirementUpdateOutput,
+)
+from app.workflow import (
+    accept, add, apply_update, approve, edit, fill_answers, next_step, require_phase, to_proposals, validate_state,
+)
 
 logger = logging.getLogger("uvicorn.error")
 PROMPTS = Path(__file__).parent / "prompts"
@@ -121,3 +125,47 @@ def analyze(text, provider=None):
     return AnalyzeResponse(project_id=project_id, run_id=run_id, requirements=requirements,
                            gaps=gaps, clarification_needed=any(g.blocking for g in gaps),
                            analysis_mode=provider.mode, usage=records)
+
+
+def clarify_step(state, answers=None, provider=None):
+    """답변 반영 → Gap 재분석 → 다음 질문 / Proposal 전환 / Review 이동. 규칙 위반은 ValueError."""
+    require_phase(state, "clarifying")
+    validate_state(state)
+    reqs, gaps, history, round = state.requirements, state.gaps, state.history, state.clarification_round
+    if state.questions:
+        answers = fill_answers(state.questions, answers)
+        history = [*history, ClarificationRound(round=round, gaps=gaps, questions=state.questions, answers=answers)]
+    elif answers is not None:
+        raise ValueError("답변할 질문이 없습니다.")
+    provider = provider if provider is not None else get_provider()
+    records = []
+    args = (state.project_id, state.run_id, records)
+    # 모두 빈 답변이면 Requirement가 바뀌지 않으므로 update·gap 재분석을 건너뛰고 기존 Gap을 쓴다.
+    if state.questions and any(a.answer.strip() for a in answers):
+        reqs = apply_update(reqs, update_stage(provider, state.text, reqs, gaps, state.questions, answers, *args),
+                            state.project_id)
+        gaps = gap_stage(provider, state.text, reqs, state.run_id, records)
+    changes = {"requirements": reqs, "gaps": gaps, "history": history, "questions": [],
+               "phase": "review", "clarification_needed": False}
+    match next_step(gaps, round):
+        case "question":
+            changes |= {"questions": question_stage(provider, state.text, reqs, gaps, *args),
+                        "clarification_round": round + 1, "phase": "clarifying", "clarification_needed": True}
+        case "proposal":
+            questions = question_stage(provider, state.text, reqs, gaps, *args)  # ai_proposal만 쓴다
+            changes["requirements"] = to_proposals(reqs, gaps, questions, state.project_id)
+    changes["usage"] = [*state.usage, *records]
+    return state.model_copy(update=changes)
+
+
+def review_step(state, action):
+    """Requirement Review 작업. LLM 호출 없음. approve일 때만 인계물(ReviewedRequirements)을 함께 반환한다."""
+    require_phase(state, "review")
+    validate_state(state)
+    if action.type == "accept":
+        return state.model_copy(update={"requirements": accept(state.requirements, action.ids)}), None
+    if action.type == "edit":
+        return edit(state, action), None
+    if action.type == "add":
+        return add(state, action), None
+    return approve(state)

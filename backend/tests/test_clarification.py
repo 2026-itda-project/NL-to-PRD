@@ -6,10 +6,14 @@ from unittest.mock import patch
 
 from app.llm.errors import AnalysisError
 from app.llm.mock import MockProvider, analyze_gaps
+from fastapi import HTTPException
+
 from app.llm.snowchat import SnowChatProvider
-from app.pipeline import question_stage, update_stage
+from app.main import clarification_step, review
+from app.pipeline import analyze, question_stage, update_stage
 from app.schemas import (
-    Answer, ClarificationQuestion, Gap, QuestionOutput, Requirement, RequirementUpdateOutput,
+    AcceptAction, Answer, ApproveAction, ClarificationQuestion, ClarificationStepRequest, Gap, QuestionOutput,
+    Requirement, RequirementUpdateOutput, ReviewRequest, WorkflowState,
 )
 
 HANDOFF = json.loads(
@@ -176,6 +180,127 @@ class SnowChatClarificationTest(unittest.TestCase):
                     check(value)
         for output_type in [QuestionOutput, RequirementUpdateOutput]:
             check(output_type.model_json_schema())
+
+
+def handoff_state(**changes):
+    return WorkflowState(**{**HANDOFF, "text": TEXT, **changes})
+
+
+def demo_state():
+    return WorkflowState(**analyze(TEXT, MockProvider()).model_dump(), text=TEXT)
+
+
+def step(state, answers=None):
+    return clarification_step(ClarificationStepRequest(state=state, answers=answers))
+
+
+def blank(state):
+    return [Answer(gap_id=q.gap_id, answer="") for q in state.questions]
+
+
+class ClarificationApiTest(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"LLM_PROVIDER": "mock"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def assert_invalid_state(self, call):
+        with self.assertRaises(HTTPException) as error:
+            call()
+        self.assertEqual(error.exception.status_code, 422)
+        self.assertEqual(error.exception.detail["code"], "invalid_state")
+        self.assertTrue(error.exception.detail["message"])
+
+    def test_first_step_on_handoff_asks_one_question_per_blocking_gap(self):
+        state = step(handoff_state())
+        self.assertEqual((state.phase, state.clarification_round, state.clarification_needed), ("clarifying", 1, True))
+        self.assertEqual([q.gap_id for q in state.questions], [g.id for g in GAPS if g.blocking])
+        self.assertEqual(len(state.questions), 5)
+        self.assertEqual(state.history, [])
+
+    def test_keyword_answer_moves_to_review_and_accumulates_usage(self):
+        start = demo_state()
+        asked = step(start)
+        self.assertEqual(len(asked.questions), 1)
+        answers = [Answer(gap_id=asked.questions[0].gap_id, answer="처리 전까지 직원이 취소할 수 있다.")]
+        done = step(asked, answers)
+        self.assertEqual((done.phase, done.questions, done.clarification_needed), ("review", [], False))
+        self.assertFalse(any(g.blocking for g in done.gaps))
+        self.assertEqual(len(done.history), 1)
+        self.assertEqual((done.history[0].round, done.history[0].answers), (1, answers))
+        self.assertTrue(any(r.source == "clarification_answer" for r in done.requirements))
+        self.assertEqual([r["stage"] for r in done.usage], [
+            "requirement_extraction", "gap_analysis", "question_generation", "requirement_update", "gap_analysis"])
+        self.assertEqual({(r["run_id"], r["project_id"]) for r in done.usage}, {(start.run_id, start.project_id)})
+        self.assertTrue(all(r["started_at"] <= r["ended_at"] for r in done.usage))
+
+    def test_three_blank_rounds_convert_blocking_gaps_to_proposals(self):
+        state = step(demo_state())
+        for _ in range(3):
+            state = step(state, blank(state))
+        self.assertEqual((state.phase, state.clarification_round, state.questions), ("review", 3, []))
+        self.assertFalse(state.clarification_needed)
+        self.assertEqual([h.round for h in state.history], [1, 2, 3])
+        proposals = [r for r in state.requirements if r.status == "proposed"]
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual((proposals[0].source, proposals[0].blocking), ("ai_proposal", False))
+        self.assertFalse(any(r.source == "ai_proposal" and r.status == "confirmed" for r in state.requirements))
+        # Blank rounds skip update·gap; only questions (and the final proposals) are generated.
+        self.assertEqual([r["stage"] for r in state.usage][2:], ["question_generation"] * 4)
+
+    def test_missing_answers_are_recorded_as_blank(self):
+        asked = step(handoff_state())
+        state = step(asked, [Answer(gap_id="GAP-005", answer="")])
+        self.assertEqual([(a.gap_id, a.answer) for a in state.history[0].answers],
+                         [(q.gap_id, "") for q in asked.questions])
+
+    def test_invalid_clarification_requests_return_422(self):
+        asked = step(handoff_state())
+        other = handoff_state(requirements=[REQS[0].model_copy(update={"project_id": "other"}), *REQS[1:]])
+        cases = {
+            "answers on first call": lambda: step(handoff_state(), []),
+            "answers missing": lambda: step(asked),
+            "unknown gap_id": lambda: step(asked, [Answer(gap_id="GAP-999", answer="x")]),
+            "duplicate answer": lambda: step(asked, [Answer(gap_id="GAP-001", answer="a"), Answer(gap_id="GAP-001", answer="b")]),
+            "review phase": lambda: step(handoff_state(phase="review")),
+            "project mismatch": lambda: step(other),
+            "duplicate requirement id": lambda: step(handoff_state(requirements=[*REQS, REQS[0]])),
+            "question for unknown gap": lambda: step(asked.model_copy(update={"gaps": GAPS[:1]}), []),
+        }
+        for name, call in cases.items():
+            with self.subTest(name):
+                self.assert_invalid_state(call)
+
+    def test_llm_errors_keep_analysis_error_format(self):
+        with patch.dict(os.environ, {"LLM_PROVIDER": "bad"}), self.assertRaises(HTTPException) as error:
+            step(handoff_state())
+        self.assertEqual(error.exception.status_code, 503)
+        self.assertEqual(error.exception.detail["code"], "invalid_config")
+
+    def test_review_accept_then_approve(self):
+        state = step(demo_state())
+        for _ in range(3):
+            state = step(state, blank(state))
+        proposal = next(r for r in state.requirements if r.status == "proposed")
+        accepted = review(ReviewRequest(state=state, action=AcceptAction(type="accept", ids=[proposal.id])))
+        self.assertIsNone(accepted.reviewed)
+        self.assertEqual(next(r for r in accepted.state.requirements if r.id == proposal.id).status, "confirmed")
+        approved = review(ReviewRequest(state=accepted.state, action=ApproveAction(type="approve")))
+        self.assertEqual(approved.state.phase, "approved")
+        self.assertEqual((approved.reviewed.run_id, approved.reviewed.metrics["turn_count"]), (state.run_id, 3))
+
+    def test_invalid_review_requests_return_422(self):
+        clarifying = step(handoff_state())
+        approved = handoff_state(phase="approved")
+        cases = {
+            "clarifying phase": lambda: review(ReviewRequest(state=clarifying, action=ApproveAction(type="approve"))),
+            "approved phase": lambda: review(ReviewRequest(state=approved, action=ApproveAction(type="approve"))),
+            "not a proposal": lambda: review(ReviewRequest(state=handoff_state(phase="review"),
+                                                           action=AcceptAction(type="accept", ids=["REQ-001"]))),
+        }
+        for name, call in cases.items():
+            with self.subTest(name):
+                self.assert_invalid_state(call)
 
 
 if __name__ == "__main__":

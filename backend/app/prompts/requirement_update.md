@@ -20,8 +20,9 @@ For every returned item copy project_id and set source to clarification_answer.
 status is confirmed when the answer settles the decision. If the answer defers the
 decision or stays ambiguous, use needs_clarification; blocking is true only when
 the decision is still essential to core service behavior. confirmed always has
-blocking=false. Extract acceptance_criteria only when the answer states them;
-otherwise return []. Preserve the user's language.
+blocking=false. Always return acceptance_criteria as []; the user writes
+acceptance criteria during Requirement Review, even when the answer describes
+completion conditions. Preserve the user's language.
 
 Choose one category per item, preferring the most specific meaning:
 role: actor identity; functional: action or capability; flow: order of steps;

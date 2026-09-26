@@ -95,6 +95,8 @@ class UpdateStageTest(unittest.TestCase):
             "project mismatch": (REQS, [updated("REQ-006", project_id="other")]),
             "duplicate id": (REQS, [updated("REQ-006"), updated("REQ-006")]),
             "empty description": (REQS, [updated("REQ-006", description=" ")]),
+            # AC는 사용자가 Review에서 입력한다. LLM이 만든 AC가 confirmed에 들어가지 않게 한다.
+            "acceptance criteria": (REQS, [updated("REQ-006", acceptance_criteria=["답변에서 만든 완료 조건"])]),
         }
         for name, (reqs, output) in cases.items():
             with self.subTest(name), self.assertRaises(AnalysisError) as error:

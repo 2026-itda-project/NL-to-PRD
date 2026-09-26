@@ -105,6 +105,9 @@ def update_stage(provider, text, requirements, gaps, questions, answers, project
     def check(output):
         if any(not r.id.strip() or not r.description.strip() for r in output.requirements):
             raise ValueError("갱신된 요구사항의 식별자 또는 내용이 비어 있습니다.")
+        # AC는 사용자가 Review에서 입력한다. LLM이 만든 AC가 사용자 확인 없이 confirmed에 들어가지 않게 한다.
+        if any(r.acceptance_criteria for r in output.requirements):
+            raise ValueError("답변 반영 결과에 Acceptance Criteria가 있습니다.")
         apply_update(requirements, output.requirements, project_id)
 
     gaps_by_id = {g.id: g for g in gaps}

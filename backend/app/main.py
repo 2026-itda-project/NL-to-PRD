@@ -4,9 +4,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import ValidationError
 
 from app.pipeline import analyze, clarify_step, review_step
+from app.prd import build_prd, draft_overview, validate_prd
 from app.llm.errors import AnalysisError
 from app.schemas import (
-    AnalyzeRequest, AnalyzeResponse, ClarificationStepRequest, ReviewRequest, ReviewResponse, WorkflowState,
+    AnalyzeRequest, AnalyzeResponse, ClarificationStepRequest, PRDRequest, PRDResponse,
+    ReviewRequest, ReviewResponse, WorkflowState,
 )
 
 app = FastAPI(title="NL-to-PRD M1 input analysis")
@@ -47,3 +49,9 @@ def review(request: ReviewRequest) -> ReviewResponse:
     except ValueError as exc:
         raise http_error(exc) from None
     return ReviewResponse(state=state, reviewed=reviewed)
+
+
+@app.post("/api/prd", response_model=PRDResponse)
+def generate_prd(request: PRDRequest) -> PRDResponse:
+    prd = build_prd(request.reviewed, draft_overview(request.text))
+    return PRDResponse(prd=prd, validation=validate_prd(prd, request.reviewed))

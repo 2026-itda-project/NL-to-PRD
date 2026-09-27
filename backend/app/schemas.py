@@ -213,3 +213,14 @@ class PRD(BaseModel):
     acceptance_criteria: list[AcceptanceCriterion]
     assumptions: list[PRDItem]
     open_issues: list[PRDItem]
+
+
+class PRDRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    text: str
+    reviewed: ReviewedRequirements
+
+
+class PRDResponse(BaseModel):
+    prd: PRD
+    validation: dict

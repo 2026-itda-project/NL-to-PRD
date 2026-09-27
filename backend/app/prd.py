@@ -16,6 +16,8 @@ PREFIX_BY_SECTION = {
 
 BODY_SECTIONS = ("in_scope", "roles", "user_flows", "functional_requirements", "business_rules", "nfrs")
 
+def draft_overview(text: str) -> ProductOverview:
+    return ProductOverview(summary=text.strip(), problem="", goals=[])
 
 def section_for(req: Requirement) -> str:
     if req.status == "proposed":

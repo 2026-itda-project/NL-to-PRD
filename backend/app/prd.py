@@ -14,6 +14,8 @@ PREFIX_BY_SECTION = {
     "assumptions": "ASM", "open_issues": "ISSUE",
 }
 
+BODY_SECTIONS = ("in_scope", "roles", "user_flows", "functional_requirements", "business_rules", "nfrs")
+
 
 def section_for(req: Requirement) -> str:
     if req.status == "proposed":
@@ -39,3 +41,30 @@ def build_prd(reviewed: ReviewedRequirements, overview: ProductOverview) -> PRD:
                     target_id=item.id, source_requirement_ids=[req.id]))
     return PRD(project_id=reviewed.project_id, run_id=reviewed.run_id, overview=overview,
                out_of_scope=[], acceptance_criteria=criteria, **sections)
+
+
+def validate_prd(prd: PRD, reviewed: ReviewedRequirements) -> dict:
+    errors, warnings = [], []
+    by_id = {r.id: r for r in reviewed.requirements}
+
+    if any(r.blocking and r.status == "needs_clarification" for r in reviewed.requirements):
+        errors.append("미해결 Blocking Requirement가 남아 있습니다.")
+
+    for name in BODY_SECTIONS:
+        for item in getattr(prd, name):
+            if any(i not in by_id or by_id[i].status != "confirmed" for i in item.source_requirement_ids):
+                errors.append(f"{item.id}에 확정되지 않은 Requirement가 들어 있습니다.")
+
+    if not prd.overview.summary.strip():
+        errors.append("Product Overview가 비어 있습니다.")
+    if not prd.roles:
+        errors.append("Users / Roles가 비어 있습니다.")
+    if not prd.functional_requirements:
+        errors.append("Functional Requirements가 비어 있습니다.")
+
+    targets = {ac.target_id for ac in prd.acceptance_criteria}
+    for fr in prd.functional_requirements:
+        if fr.id not in targets:
+            warnings.append(f"{fr.id}에 Acceptance Criteria가 없습니다.")
+
+    return {"passed": not errors, "errors": errors, "warnings": warnings}

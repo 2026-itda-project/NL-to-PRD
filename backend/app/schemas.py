@@ -174,3 +174,42 @@ class ReviewResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     state: WorkflowState
     reviewed: ReviewedRequirements | None = None
+
+# ===== PRD 단계 (남윤아) =====
+class PRDItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str
+    description: str
+    source_requirement_ids: list[str]
+
+
+class AcceptanceCriterion(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str
+    description: str
+    target_id: str
+    source_requirement_ids: list[str]
+
+
+class ProductOverview(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    summary: str
+    problem: str
+    goals: list[str]
+
+
+class PRD(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    project_id: str
+    run_id: str
+    overview: ProductOverview
+    in_scope: list[PRDItem]
+    out_of_scope: list[PRDItem]
+    roles: list[PRDItem]
+    user_flows: list[PRDItem]
+    functional_requirements: list[PRDItem]
+    business_rules: list[PRDItem]
+    nfrs: list[PRDItem]
+    acceptance_criteria: list[AcceptanceCriterion]
+    assumptions: list[PRDItem]
+    open_issues: list[PRDItem]

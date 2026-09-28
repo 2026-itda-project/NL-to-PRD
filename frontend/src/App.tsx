@@ -374,8 +374,14 @@ export default function App() {
                   <h3>1. Product Overview</h3>
                   <p>{prdResult.prd.overview.summary}</p>
                   {PRD_SECTIONS.map(([title, key]) => prdSection(title, prdResult.prd[key]))}
-                  <h3>Final PRD JSON</h3>
-                  <pre>{JSON.stringify(prdResult.prd, null, 2)}</pre>
+                  {prdResult.validation.passed ? (
+                    <>
+                      <h3>Final PRD JSON</h3>
+                      <pre>{JSON.stringify(prdResult.prd, null, 2)}</pre>
+                    </>
+                  ) : (
+                    <p className="error">검증을 통과하지 못해 Final PRD로 출력하지 않습니다.</p>
+                  )}
                 </>
               )}
             </>

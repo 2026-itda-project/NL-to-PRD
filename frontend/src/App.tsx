@@ -134,6 +134,7 @@ export default function App() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [reviewed, setReviewed] = useState<ReviewedRequirements | null>(null)
   const [prdResult, setPrdResult] = useState<PRDResult | null>(null)
+  const [approvedFrom, setApprovedFrom] = useState<WorkflowState | null>(null)
 
   // 질문 대기 중이면 답변 라운드, 아니면 분석 직후 첫 호출(answers 없이)
   async function step(current: WorkflowState) {
@@ -182,6 +183,7 @@ export default function App() {
       const result = await post<{ state: WorkflowState; reviewed: ReviewedRequirements | null }>('/api/review', { state, action })
       setState(result.state)
       setReviewed(result.reviewed)
+      if (action.type === 'approve') setApprovedFrom(state)
       setDraft(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Review 요청에 실패했습니다.')
@@ -203,6 +205,14 @@ export default function App() {
     }
   }
 
+  function backToReview() {
+    if (!approvedFrom) return
+    setState(approvedFrom)
+    setReviewed(null)
+    setPrdResult(null)
+    setApprovedFrom(null)
+  }
+
   function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!draft) return
@@ -222,6 +232,7 @@ export default function App() {
     setDraft(null)
     setReviewed(null)
     setPrdResult(null)
+    setApprovedFrom(null)
   }
 
   const editable = state?.phase === 'review' && !loading
@@ -382,6 +393,7 @@ export default function App() {
                   ) : (
                     <p className="error">검증을 통과하지 못해 Final PRD로 출력하지 않습니다.</p>
                   )}
+                  <button key="back" type="button" onClick={backToReview} disabled={!!loading || !approvedFrom}>Review로 돌아가 수정</button>
                 </>
               )}
             </>

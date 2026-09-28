@@ -80,6 +80,33 @@ type ReviewedRequirements = {
   metrics: Record<string, number>
 }
 
+type PRDItem = { id: string; description: string; source_requirement_ids: string[] }
+
+type PRD = {
+  project_id: string
+  run_id: string
+  overview: { summary: string; problem: string; goals: string[] }
+  in_scope: PRDItem[]
+  out_of_scope: PRDItem[]
+  roles: PRDItem[]
+  user_flows: PRDItem[]
+  functional_requirements: PRDItem[]
+  business_rules: PRDItem[]
+  nfrs: PRDItem[]
+  acceptance_criteria: (PRDItem & { target_id: string })[]
+  assumptions: PRDItem[]
+  open_issues: PRDItem[]
+}
+
+type PRDResult = { prd: PRD; validation: { passed: boolean; errors: string[]; warnings: string[] } }
+
+const PRD_SECTIONS = [
+  ['2. Scope (In)', 'in_scope'], ['2. Scope (Out)', 'out_of_scope'], ['3. Users / Roles', 'roles'],
+  ['4. User Scenario / Flow', 'user_flows'], ['5. Functional Requirements', 'functional_requirements'],
+  ['6. Business Rules', 'business_rules'], ['7. Non-functional Requirements', 'nfrs'],
+  ['8. Acceptance Criteria', 'acceptance_criteria'], ['9. Assumptions', 'assumptions'], ['10. Open Issues', 'open_issues'],
+] as const
+
 // 수정·추가 폼 하나만 연다. id가 ''이면 새 Requirement 추가
 type Draft = { id: string; category: string; description: string; ac: string; confirm: boolean }
 
@@ -106,6 +133,8 @@ export default function App() {
   const [loading, setLoading] = useState('')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [reviewed, setReviewed] = useState<ReviewedRequirements | null>(null)
+  const [prdResult, setPrdResult] = useState<PRDResult | null>(null)
+  const [approvedFrom, setApprovedFrom] = useState<WorkflowState | null>(null)
 
   // 질문 대기 중이면 답변 라운드, 아니면 분석 직후 첫 호출(answers 없이)
   async function step(current: WorkflowState) {
@@ -154,12 +183,34 @@ export default function App() {
       const result = await post<{ state: WorkflowState; reviewed: ReviewedRequirements | null }>('/api/review', { state, action })
       setState(result.state)
       setReviewed(result.reviewed)
+      if (action.type === 'approve') setApprovedFrom(state)
       setDraft(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Review 요청에 실패했습니다.')
     } finally {
       setLoading('')
     }
+  }
+
+  async function generatePrd() {
+    if (!state || !reviewed) return
+    setLoading('PRD 생성 중…')
+    setError('')
+    try {
+      setPrdResult(await post<PRDResult>('/api/prd', { text: state.text, reviewed }))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'PRD 생성에 실패했습니다.')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  function backToReview() {
+    if (!approvedFrom) return
+    setState(approvedFrom)
+    setReviewed(null)
+    setPrdResult(null)
+    setApprovedFrom(null)
   }
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
@@ -180,6 +231,8 @@ export default function App() {
     setError('')
     setDraft(null)
     setReviewed(null)
+    setPrdResult(null)
+    setApprovedFrom(null)
   }
 
   const editable = state?.phase === 'review' && !loading
@@ -220,6 +273,24 @@ export default function App() {
           </span>
         )}
       </li>
+    )
+  }
+
+  function prdSection(title: string, items: (PRDItem & { target_id?: string })[]) {
+    return (
+      <div key={title}>
+        <h3>{title}</h3>
+        {items.length === 0 ? <p>없음</p> : (
+          <ul>
+            {items.map(item => (
+              <li key={item.id}>
+                <strong>{item.id}</strong>{item.target_id && ` → ${item.target_id}`} — {item.description}
+                <small>출처: {item.source_requirement_ids.join(', ')}</small>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     )
   }
 
@@ -300,6 +371,29 @@ export default function App() {
                 <>
                   <h3>인계 JSON (ReviewedRequirements)</h3>
                   <pre>{JSON.stringify(reviewed, null, 2)}</pre>
+                  <button key="prd" type="button" onClick={generatePrd} disabled={!!loading}>PRD 생성</button>
+                </>
+              )}
+              {prdResult && (
+                <>
+                  <h2>PRD Preview</h2>
+                  <p className={prdResult.validation.passed ? 'notice' : 'error'}>
+                    검증 {prdResult.validation.passed ? '통과' : '실패'}
+                  </p>
+                  {prdResult.validation.errors.map(message => <p key={message} className="error">오류: {message}</p>)}
+                  {prdResult.validation.warnings.map(message => <p key={message} className="notice">경고: {message}</p>)}
+                  <h3>1. Product Overview</h3>
+                  <p>{prdResult.prd.overview.summary}</p>
+                  {PRD_SECTIONS.map(([title, key]) => prdSection(title, prdResult.prd[key]))}
+                  {prdResult.validation.passed ? (
+                    <>
+                      <h3>Final PRD JSON</h3>
+                      <pre>{JSON.stringify(prdResult.prd, null, 2)}</pre>
+                    </>
+                  ) : (
+                    <p className="error">검증을 통과하지 못해 Final PRD로 출력하지 않습니다.</p>
+                  )}
+                  <button key="back" type="button" onClick={backToReview} disabled={!!loading || !approvedFrom}>Review로 돌아가 수정</button>
                 </>
               )}
             </>
